@@ -7,7 +7,7 @@ const WebSocket = require('ws');
 const app = express();
 app.use(express.json());
 
-const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbzzkFkvMkJ7bCGmgEuLuwHsmypjqRcebCSU1vrGYcqSu0MGkSVhMo8LXhGAFCwCydzzew/exec';
+const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbypE6ax6JvWptpvcgYJ7I-ms4XAdOSckuF-3rPoVF-LImzJGxRwTXQmTG9ogIXSzZZHXw/exec';
 const GRUPOS_PERMITIDOS = [
   '120363403512588677@g.us', // Grupo original
   '120363415954951531@g.us' // Novo grupo
@@ -16,7 +16,7 @@ const USUARIOS_AUTORIZADOS = [
   '5521975874116@s.whatsapp.net', // N1
   '55219976919619@s.whatsapp.net' // N2
 ];
-const OPENROUTER_API_KEY = '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'; // Substitua pela sua chave de API do OpenRout
+const OPENROUTER_API_KEY = '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'; // Substitua pela sua chave de API do OpenRout
 const chartJSNodeCanvas = new ChartJSNodeCanvas({
   width: 800,
   height: 600,
@@ -112,6 +112,32 @@ async function interpretarMensagemComOpenRouter(texto) {
             - excluir tudo: Exclui todas as transações.
             - excluir dia [data]: Exclui transações de um dia específico.
             - excluir periodo [dataInicio] [dataFim]: Exclui transações de um período específico.
+            - adicionar pedido [cliente] [produto] [quantidade] [precoUnitario]: Registra um pedido para um cliente.
+            - consultar pedidos [cliente] [data]: *Sinônimos* → "lista de pedidos", "ver pedidos", "pedidos do cliente".
+            - listar clientes: *Sinônimos* → "meus clientes", "clientes registrados", "quais são meus clientes".
+
+            **Exemplo:**
+            - Mensagem: 'Quais clientes têm pedidos?'
+            - JSON: {"comando": "listar clientes" }"
+          
+            - Mensagem: "Meus clientes"  
+            - JSON: {"comando": "listar clientes" }"
+
+
+            **Instruções Especiais para Pedidos:**
+            - Se a mensagem incluir palavras como 'consultar pedidos', 'ver pedidos' ou 'listar pedidos', extraia:
+            - cliente: Nome do cliente após 'para' ou 'do'.
+            **Instruções Especiais para Datas:**\n" +
+            - A data deve ser extraída **exatamente como escrita pelo usuário**, sem modificações.\n" +
+            - Exemplo:
+            - Mensagem: 'Lista de pedidos da Lavradio dia 21/03/2025'
+            - JSON: { "comando": "consultar pedidos", "parametros": { "cliente": "Lavradio", "data": "21/03/2025" }}"
+            - data: Data no formato DD/MM/AAAA ou DD/MM.
+            Exemplo:
+            - Mensagem: 'Quero ver os pedidos do cliente Lavradio de 21/03/2025'
+            - JSON: { "comando": "consultar pedidos", "parametros": { "cliente": "Lavradio", "data": "21/03/2025" } }
+            - Mensagem: "Lista de pedidos da Lavradio dia 21/03/2025"  
+            - JSON: { "comando": "consultar pedidos", "parametros": { "cliente": "Lavradio", "data": "21/03/2025" } }
 
             1º **Instruções Especiais:**
             - Se a mensagem se referir a compras de alimentos (como verduras, legumes, frutas, carnes, etc.), a categoria deve ser sempre "Alimentação".
@@ -128,6 +154,25 @@ async function interpretarMensagemComOpenRouter(texto) {
               - "Paguei 50 reais em shampoo e condicionador"
 
               3º **Instruções Especiais:**
+              - Se a mensagem se referir a um pedido, extraia:
+              - cliente: Nome do cliente após "para cliente".
+              - produto: Nome do produto após "de".
+              - quantidade: Número antes da unidade (ex: "uma caixa" → quantidade=1).
+              - precoUnitario: Valor após "por" ou "reais".
+              Exemplo:
+              - Mensagem: "Adicionar um pedido para cliente Lavradio de uma caixa de tomate por 120 reais"
+              - JSON:
+              {
+                "comando": "adicionar pedido",
+                "parametros": {
+                  "cliente": "Lavradio",
+                  "produto": "caixa de tomate",
+                  "quantidade": 1,
+                  "precoUnitario": 120
+                }
+              }
+
+              4º **Instruções Especiais:**
               - Se a mensagem for uma pergunta geral, conversa ou não relacionada a finanças, retorne um JSON vazio: {}.
               - Exemplos de mensagens que devem retornar JSON vazio:
               - "Qual é a previsão do tempo?"
@@ -234,6 +279,19 @@ function interpretarMensagemManual(texto) {
   const valorMatch = texto.match(/\d+/);
   const valor = valorMatch ? parseFloat(valorMatch[0]) : null;
  
+    // Fallback para o comando "consultar pedidos"
+    if (texto.match(/lista de pedidos|pedidos do cliente|ver pedidos/i)) {
+      const cliente = texto.split(/da |do |cliente /i)[1]?.split(/\d{2}\/\d{2}/)[0]?.trim();
+      const dataMatch = texto.match(/(\d{2}\/\d{2}\/?\d{0,4})/);
+      const data = dataMatch ? dataMatch[0] : null;
+      return { comando: "consultar pedidos", parametros: { cliente, data } };
+    }
+
+    // Fallback para "listar clientes"
+    if (texto.match(/meus clientes|clientes cadastrados|quais clientes/i)) {
+      return { comando: "listar clientes" };
+    }
+
     // Mapeamento de palavras-chave para categorias
   const categorias = {
     // Alimentação
@@ -424,7 +482,9 @@ function pareceSerComandoFinanceiro(texto) {
   const palavrasChaveFinanceiras = [
     "resumo", "poupança", "entrada", "saída", "média", "gráfico", "categoria", 
     "orçamento", "dívida", "lembrete", "histórico", "excluir", "comprei", "gastei", 
-    "paguei", "transferir", "saldo", "meta", "valor", "reais", "R$"
+    "paguei", "transferir", "saldo", "meta", "valor", "reais", "R$",
+    "consultar pedidos", "ver pedidos", "listar pedidos", "lista de pedidos", "pedidos do cliente", "ver pedidos",
+    "listar clientes", "clientes registrados", "ver clientes", "Quais são os meus clientes", "Quais são os clientes", "meus clientes", "clientes cadastrados", "quais clientes"
   ];
 
   // Verifica se a mensagem contém alguma palavra-chave financeira
@@ -479,9 +539,9 @@ async function iniciarBot() {
   console.log("Grupo Remetente:", msg.key.remoteJid);
   
   // Verifica grupo permitido
-  if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
-    console.log("Mensagem ignorada (grupo não autorizado). IDs válidos:", GRUPOS_PERMITIDOS);
-    return;
+  if (!msg.key.remoteJid.endsWith('@g.us')) {
+  console.log("Mensagem ignorada (não é um grupo).");
+  return;
   }
 
   // Verifica usuário autorizado
@@ -498,9 +558,9 @@ async function iniciarBot() {
     }
 
     // Verifica se a mensagem é do tipo 'conversation' (texto)
-    if (!msg.message.conversation) {
-      console.log("Mensagem ignorada (não é uma mensagem de texto).");
-      return;
+   if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
+  console.log("Grupo não autorizado:", msg.key.remoteJid);
+  return;
     }
 
     // Verifica se a mensagem é antiga (mais de 60 segundos)
@@ -547,6 +607,100 @@ if (texto.toLowerCase() === "!id") {
 
       // Processa o comando financeiro
       switch (comando) {
+
+        case 'listar clientes': {
+          console.log("Processando comando 'listar clientes'...");
+          const response = await axios.get(`${WEB_APP_URL}?action=listarClientes`);
+          const clientes = response.data.clientes;
+        
+          if (clientes.length === 0) {
+            await sock.sendMessage(msg.key.remoteJid, { text: "📭 Nenhum cliente registrado." });
+            return;
+          }
+        
+          const listaClientes = clientes.map((cliente, index) => `${index + 1}. ${cliente}`).join('\n');
+          await sock.sendMessage(msg.key.remoteJid, { text: `📋 *Clientes Registrados*:\n\n${listaClientes}` });
+          break;
+        }
+
+        case 'consultar pedidos': {
+          console.log("Processando comando 'consultar pedidos'...");
+          const cliente = parametros.cliente;
+          let dataFormatada = parametros.data;
+        
+          // Validação e formatação da data
+          if (dataFormatada && dataFormatada.match(/^\d{2}\/\d{2}$/)) {
+            dataFormatada += `/${new Date().getFullYear()}`; // Adiciona ano se faltar
+          }
+        
+          try {
+            // Faz a requisição com a data formatada
+            const response = await axios.get(
+              `${WEB_APP_URL}?action=consultarPedidos&cliente=${encodeURIComponent(cliente)}&data=${encodeURIComponent(dataFormatada)}`
+            );
+            
+            const pedidos = response.data;
+        
+            if (!pedidos || pedidos.length === 0) {
+              await sock.sendMessage(msg.key.remoteJid, { 
+                text: `📭 Nenhum pedido encontrado para *${cliente}* em *${dataFormatada}*.` 
+              });
+              return;
+            }
+        
+            // Construção da mensagem
+            let mensagem = `📅 Pedidos para *${cliente}* em *${dataFormatada}*:\n\n`;
+            let totalPedido = 0;
+        
+            pedidos.forEach((pedido) => {
+              mensagem += `----------------------------------------\n`;
+              mensagem += `🍅 *Produto*: ${pedido.produto}\n`;
+              mensagem += `💵 *Preço Unitário*: R$ ${pedido.precoUnitario}\n`;
+              mensagem += `📦 *Quantidade*: ${pedido.quantidade}\n`;
+              
+              // Garante que o total seja tratado como string
+              const totalProduto = typeof pedido.total === 'number' 
+                ? pedido.total.toFixed(2).replace(".", ",") 
+                : pedido.total.toString().replace(".", ",");
+              
+              mensagem += `💰 *Total do Produto*: R$ ${totalProduto}\n`;
+              totalPedido += parseFloat(pedido.total.toString().replace(",", "."));
+            });
+        
+            mensagem += `\n💼 *Valor Total do Pedido*: R$ ${totalPedido.toFixed(2).replace(".", ",")}`;
+        
+            await sock.sendMessage(msg.key.remoteJid, { text: mensagem });
+          } catch (error) {
+            console.error("Erro ao consultar pedidos:", error);
+            await sock.sendMessage(msg.key.remoteJid, { 
+              text: "❌ Erro ao buscar pedidos. Verifique o formato da data (DD/MM/AAAA)." 
+            });
+          }
+          break;
+        }
+        
+        case 'adicionar pedido': {
+          console.log("Processando comando 'adicionar pedido'...");
+          const cliente = parametros.cliente;
+          const produto = parametros.produto;
+          const quantidade = parametros.quantidade || 1; // Padrão: 1
+          const precoUnitario = parseFloat(parametros.precoUnitario).toFixed(2).replace(".", ",");
+          const total = (quantidade * parseFloat(parametros.precoUnitario)).toFixed(2).replace(".", ",");
+        
+          await axios.get(
+            `${WEB_APP_URL}?action=adicionarPedido&cliente=${cliente}&produto=${produto}&quantidade=${quantidade}&precoUnitario=${precoUnitario}&total=${total}`
+          );
+          
+          await sock.sendMessage(msg.key.remoteJid, { 
+            text: `✅ Pedido registrado para ${cliente}:\n\n` +
+                  `📦 Produto: ${produto}\n` +
+                  `📦 Quantidade: ${quantidade}\n` +
+                  `💵 Preço Unitário: R$ ${precoUnitario}\n` +
+                  `💰 Total: R$ ${total}`
+          });
+          break;
+        }
+
         // CASO 'resumo'
         case 'resumo': { // <--- Adicione chaves aqui
           console.log("Processando comando 'resumo'...");
