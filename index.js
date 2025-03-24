@@ -19,7 +19,7 @@ const USUARIOS_AUTORIZADOS = [
   '5521975874116@s.whatsapp.net', // N1
   '55219976919619@s.whatsapp.net' // N2
 ];
-const OPENROUTER_API_KEY = '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'; // Substitua pela sua chave de API do OpenRout
+const OPENROUTER_API_KEY = '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'; // Substitua pela sua chave de API do OpenRout
 const chartJSNodeCanvas = new ChartJSNodeCanvas({
   width: 800,
   height: 600,
