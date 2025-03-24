@@ -3,6 +3,7 @@ const axios = require('axios');
 const express = require('express');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const WebSocket = require('ws');
+const crypto = require('crypto');
 
 const app = express();
 app.use(express.json());
