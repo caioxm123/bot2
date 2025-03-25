@@ -1,11 +1,8 @@
-const crypto = require('crypto');
-globalThis.crypto = crypto.webcrypto;
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const axios = require('axios');
 const express = require('express');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const WebSocket = require('ws');
-
 
 const app = express();
 app.use(express.json());
@@ -19,7 +16,7 @@ const USUARIOS_AUTORIZADOS = [
   '5521975874116@s.whatsapp.net', // N1
   '55219976919619@s.whatsapp.net' // N2
 ];
-const OPENROUTER_API_KEY = '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'; // Substitua pela sua chave de API do OpenRout
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; // ✅ Usará variável de ambiente
 const chartJSNodeCanvas = new ChartJSNodeCanvas({
   width: 800,
   height: 600,
