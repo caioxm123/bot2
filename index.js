@@ -4,6 +4,7 @@ const express = require('express');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const WebSocket = require('ws');
 
+
 const app = express();
 app.use(express.json());
 
@@ -496,7 +497,12 @@ function pareceSerComandoFinanceiro(texto) {
 // Função principal do bot
 async function iniciarBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-  const sock = makeWASocket({ auth: state });
+  const sock = makeWASocket({
+    auth: state,
+    syncFullHistory: false, // 👈 Não baixa histórico antigo
+    shouldIgnoreJid: jid => !GRUPOS_PERMITIDOS.includes(jid), // 👈 Filtra grupos
+    printQRInTerminal: true // Opcional: mantém o QR code no terminal
+  });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
@@ -513,6 +519,19 @@ async function iniciarBot() {
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
 
+    // Verificação básica da mensagem
+    if (!msg?.message || !msg.key?.remoteJid) return;
+    
+    // Verifica origem permitida antes de qualquer processamento
+    const isOrigemPermitida = GRUPOS_PERMITIDOS.includes(msg.key.remoteJid) || 
+                             (msg.key.remoteJid.endsWith('@s.whatsapp.net') && 
+                              USUARIOS_AUTORIZADOS.includes(msg.key.participant));
+    
+    if (!isOrigemPermitida) {
+      console.log("Mensagem de origem não autorizada:", msg.key.remoteJid);
+      return;
+    }
+    
     // Verificação completa da estrutura da mensagem
     if (
       !msg?.message || 
@@ -534,22 +553,21 @@ async function iniciarBot() {
     });
     return;
   }
-
-  // --- Verificações de grupo e usuário ---
-  console.log("Grupo Remetente:", msg.key.remoteJid);
   
   // Verifica grupo permitido
-  if (!msg.key.remoteJid.endsWith('@g.us')) {
-  console.log("Mensagem ignorada (não é um grupo).");
-  return;
-  }
+if (GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
+  console.log("Mensagem de grupo autorizado:", msg.key.remoteJid);
+} else {
+  console.log("Grupo não autorizado ou chat privado:", msg.key.remoteJid);
+  return; // Ignora mensagens de grupos não autorizados e chats privados
+}
 
   // Verifica usuário autorizado
   const remetenteId = msg.key.participant || msg.key.remoteJid;
-  if (!USUARIOS_AUTORIZADOS.includes(remetenteId)) {
-    console.log("Usuário não autorizado:", remetenteId);
-    return;
-  }
+if (!USUARIOS_AUTORIZADOS.includes(remetenteId)) {
+  console.log("Usuário não autorizado:", remetenteId);
+  return;
+}
 
     // Ignora apenas mensagens que começam com "❌" (respostas automáticas do bot)
     if (msg.message.conversation?.startsWith("❌")) {
