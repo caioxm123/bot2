@@ -519,19 +519,6 @@ async function iniciarBot() {
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
 
-    // Verificação básica da mensagem
-    if (!msg?.message || !msg.key?.remoteJid) return;
-    
-    // Verifica origem permitida antes de qualquer processamento
-    const isOrigemPermitida = GRUPOS_PERMITIDOS.includes(msg.key.remoteJid) || 
-                             (msg.key.remoteJid.endsWith('@s.whatsapp.net') && 
-                              USUARIOS_AUTORIZADOS.includes(msg.key.participant));
-    
-    if (!isOrigemPermitida) {
-      console.log("Mensagem de origem não autorizada:", msg.key.remoteJid);
-      return;
-    }
-    
     // Verificação completa da estrutura da mensagem
     if (
       !msg?.message || 
