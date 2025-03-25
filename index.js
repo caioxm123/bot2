@@ -530,17 +530,25 @@ async function iniciarBot() {
     const msg = messages[0];
 
     // Verificação básica
-  if (!msg?.message || !msg.key?.remoteJid || !msg.message.conversation) {
-    console.log("Mensagem inválida ignorada");
+    if (!msg?.message || !msg.key?.remoteJid) {
+      console.log("Mensagem ignorada (estrutura inválida)");
+      return;
+    }
+
+  const remetente = msg.key.participant || msg.key.remoteJid;
+
+  // Verificação 2 - Tipo de mensagem
+  if (typeof msg.message.conversation !== 'string') {
+    console.log("Mensagem ignorada (não é texto)");
     return;
   }
 
-  const texto = msg.message.conversation.toLowerCase().trim();
-  const remetente = msg.key.participant || msg.key.remoteJid;
+  // Declare 'texto' UMA ÚNICA VEZ aqui ▼
+  const texto = msg.message.conversation?.trim() || "";
 
   // Log para depuração
   console.log(`\n=== Nova mensagem ===`);
-  console.log(`De: ${remetente}`);
+  console.log(`De: ${msg.key.participant || msg.key.remoteJid}`);
   console.log(`Texto: ${texto}`);
   console.log(`Grupo: ${msg.key.remoteJid}`);
 
@@ -554,8 +562,16 @@ async function iniciarBot() {
       return;
   }
 
-  // Declaração única da variável 'texto'
-  const texto = msg.message.conversation?.trim() || "";
+// Verificação única da mensagem
+  if (
+    !msg?.message || 
+    !msg.key?.remoteJid || 
+    typeof msg.message.conversation !== 'string'
+  ) {
+    console.log("Mensagem ignorada (formato inválido).");
+    return;
+  }
+
 
   // Comando !id (funciona em qualquer grupo)
   if (texto.toLowerCase() === "!id") {
@@ -588,9 +604,9 @@ if (!USUARIOS_AUTORIZADOS.includes(remetenteId)) {
     }
 
     // Verifica se a mensagem é do tipo 'conversation' (texto)
-   if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
-  console.log("Grupo não autorizado:", msg.key.remoteJid);
-  return;
+    if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
+      console.log("Grupo não autorizado");
+      return;
     }
 
     // Verifica se a mensagem é antiga (mais de 60 segundos)
