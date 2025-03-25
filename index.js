@@ -15,7 +15,7 @@ const GRUPOS_PERMITIDOS = [
 ]; // ID do grupo onde o bot está vinculado
 const USUARIOS_AUTORIZADOS = [
   '5521975874116@s.whatsapp.net', // N1
-  '55219976919619@s.whatsapp.net' // N2
+  '5521976919619@s.whatsapp.net' // N2
 ];
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; // ✅ Usará variável de ambiente
 const chartJSNodeCanvas = new ChartJSNodeCanvas({
@@ -29,8 +29,8 @@ const wss = new WebSocket.Server({ port: 8080 });
 let ultimoComandoProcessado = null;
 
 // Depois faça o log das configurações
-console.log("Grupos Autorizados:", GRUPOS_PERMITIDOS);
-console.log("Usuários Autorizados:", USUARIOS_AUTORIZADOS);
+console.log("Grupos permitidos:", GRUPOS_PERMITIDOS);
+console.log("Usuários autorizados:", USUARIOS_AUTORIZADOS);
 
 // Lista de comandos para o comando "ajuda"
 const LISTA_DE_COMANDOS = `
@@ -499,9 +499,19 @@ async function iniciarBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info');
   const sock = makeWASocket({
     auth: state,
-    syncFullHistory: false, // 👈 Não baixa histórico antigo
-    shouldIgnoreJid: jid => !GRUPOS_PERMITIDOS.includes(jid), // 👈 Filtra grupos
-    printQRInTerminal: true // Opcional: mantém o QR code no terminal
+    syncFullHistory: false,
+    shouldIgnoreJid: jid => {
+      // Permite grupos da lista PERMITIDOS
+      const isGrupoAutorizado = GRUPOS_PERMITIDOS.includes(jid);
+      
+      // Permite usuários autorizados em chats privados
+      const isUsuarioAutorizado = jid.endsWith('@s.whatsapp.net') && 
+                                USUARIOS_AUTORIZADOS.includes(jid);
+      
+      // Ignora apenas se NÃO for grupo autorizado E NÃO for usuário autorizado
+      return !(isGrupoAutorizado || isUsuarioAutorizado);
+    },
+    printQRInTerminal: true
   });
   sock.ev.on('creds.update', saveCreds);
 
@@ -518,6 +528,21 @@ async function iniciarBot() {
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
+
+    // Verificação básica
+  if (!msg?.message || !msg.key?.remoteJid || !msg.message.conversation) {
+    console.log("Mensagem inválida ignorada");
+    return;
+  }
+
+  const texto = msg.message.conversation.toLowerCase().trim();
+  const remetente = msg.key.participant || msg.key.remoteJid;
+
+  // Log para depuração
+  console.log(`\n=== Nova mensagem ===`);
+  console.log(`De: ${remetente}`);
+  console.log(`Texto: ${texto}`);
+  console.log(`Grupo: ${msg.key.remoteJid}`);
 
     // Verificação completa da estrutura da mensagem
     if (
