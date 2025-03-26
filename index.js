@@ -84,7 +84,7 @@ const LISTA_DE_COMANDOS = `
 
 // Função para interpretar mensagens usando o OpenRouter
 async function interpretarMensagemComOpenRouter(texto) {
-  console.log("Iniciando interpretação da mensagem com OpenRouter...");
+  console.log('🔎 Enviando para OpenRouter:', texto);
   try {
     const resposta = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -237,7 +237,7 @@ async function interpretarMensagemComOpenRouter(texto) {
       return interpretarMensagemManual(texto); // Fallback manual
     }
   } catch (erro) {
-    console.error("Erro ao interpretar mensagem com OpenRouter:", erro);
+    console.error('Erro no OpenRouter:', e.message);
     return null;
   }
 }
@@ -500,7 +500,6 @@ function pareceSerComandoFinanceiro(texto) {
 // Função principal do bot
 async function iniciarBot() {
 
-  
   console.log("[1/4] Iniciando autenticação...");
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
   
@@ -513,6 +512,8 @@ async function iniciarBot() {
   });
 
   console.log("[4/4] Pronto para receber mensagens!");
+
+  console.log('🔑 Estado da autenticação:', state ? "Carregado" : "Nova sessão");
 
   // Garante que o diretório pai existe
   const parentDir = path.dirname(AUTH_DIR);
@@ -549,6 +550,8 @@ async function iniciarBot() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
+    console.log('📡 Status da conexão:', update.connection);
+  if (update.qr) console.log('QR Code gerado!'); // Mostra quando o QR está ativo
     const { connection, qr } = update;
     if (qr) {
       const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qr)}`;
@@ -560,12 +563,13 @@ async function iniciarBot() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    console.log("[DEBUG] Nova mensagem recebida:", JSON.stringify(messages[0], null, 2));
+    console.log('--- NOVA MENSAGEM DETECTADA ---');
+  console.log('Mensagem bruta:', JSON.stringify(messages[0], null, 2));
     const msg = messages[0];
 
     // Verificação básica
-    if (!msg?.message || !msg.key?.remoteJid) {
-      console.log("Mensagem ignorada (estrutura inválida)");
+    if (!messages[0]?.message) {
+      console.log('❌ Mensagem ignorada (sem conteúdo)');
       return;
     }
 
