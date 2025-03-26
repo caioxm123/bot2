@@ -3,9 +3,6 @@ const axios = require('axios');
 const express = require('express');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const WebSocket = require('ws');
-const AUTH_DIR = '/opt/render/.cache/auth_info';
-const fs = require('fs');
-const path = require('path');
 
 
 const app = express();
@@ -84,7 +81,7 @@ const LISTA_DE_COMANDOS = `
 
 // Função para interpretar mensagens usando o OpenRouter
 async function interpretarMensagemComOpenRouter(texto) {
-  console.log('🔎 Enviando para OpenRouter:', texto);
+  console.log("Iniciando interpretação da mensagem com OpenRouter...");
   try {
     const resposta = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
@@ -237,7 +234,7 @@ async function interpretarMensagemComOpenRouter(texto) {
       return interpretarMensagemManual(texto); // Fallback manual
     }
   } catch (erro) {
-    console.error('Erro no OpenRouter:', e.message);
+    console.error("Erro ao interpretar mensagem com OpenRouter:", erro);
     return null;
   }
 }
@@ -499,39 +496,8 @@ function pareceSerComandoFinanceiro(texto) {
 
 // Função principal do bot
 async function iniciarBot() {
-
-  console.log("[1/4] Iniciando autenticação...");
-  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
-  
-  console.log("[2/4] Criando socket...");
-  let sock = makeWASocket({ auth: state, /*...*/ });
-
-  console.log("[3/4] Configurando listeners...");
-  sock.ev.on("connection.update", (update) => {
-    console.log("Status da conexão:", update.connection);
-  });
-
-  console.log("[4/4] Pronto para receber mensagens!");
-
-  console.log('🔑 Estado da autenticação:', state ? "Carregado" : "Nova sessão");
-
-  // Garante que o diretório pai existe
-  const parentDir = path.dirname(AUTH_DIR);
-  if (!fs.existsSync(parentDir)) {
-    fs.mkdirSync(parentDir, { recursive: true, mode: 0o755 });
-  }
-
-  // Agora cria o diretório específico
-  if (!fs.existsSync(AUTH_DIR)) {
-    fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o755 });
-  }
-  
-  // Cria o diretório se não existir
-  if (!fs.existsSync(AUTH_DIR)) {
-    fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o755 }); // Permissões explícitas
-    console.log('Diretório criado:', AUTH_DIR);
-  }
-  sock = makeWASocket({
+  const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+  const sock = makeWASocket({
     auth: state,
     syncFullHistory: false,
     shouldIgnoreJid: jid => {
@@ -550,8 +516,6 @@ async function iniciarBot() {
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
-    console.log('📡 Status da conexão:', update.connection);
-  if (update.qr) console.log('QR Code gerado!'); // Mostra quando o QR está ativo
     const { connection, qr } = update;
     if (qr) {
       const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qr)}`;
@@ -563,13 +527,11 @@ async function iniciarBot() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    console.log('--- NOVA MENSAGEM DETECTADA ---');
-  console.log('Mensagem bruta:', JSON.stringify(messages[0], null, 2));
     const msg = messages[0];
 
     // Verificação básica
-    if (!messages[0]?.message) {
-      console.log('❌ Mensagem ignorada (sem conteúdo)');
+    if (!msg?.message || !msg.key?.remoteJid) {
+      console.log("Mensagem ignorada (estrutura inválida)");
       return;
     }
 
@@ -1011,6 +973,5 @@ if (texto.toLowerCase() === "!id") {
 });
 }
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log("Servidor rodando!"));
+app.listen(3000, () => console.log("Servidor rodando!"));
 iniciarBot();
