@@ -19,8 +19,6 @@ const USUARIOS_AUTORIZADOS = [
   '5521975874116@s.whatsapp.net', // N1
   '5521976919619@s.whatsapp.net' // N2
 ];
-console.log("Grupos permitidos:", GRUPOS_PERMITIDOS);
-console.log("Usuários autorizados:", USUARIOS_AUTORIZADOS);
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; // ✅ Usará variável de ambiente
 const chartJSNodeCanvas = new ChartJSNodeCanvas({
   width: 800,
@@ -33,8 +31,8 @@ const wss = new WebSocket.Server({ port: 8080 });
 let ultimoComandoProcessado = null;
 
 // Depois faça o log das configurações
-console.log("Grupos Autorizados:", GRUPOS_PERMITIDOS);
-console.log("Usuários Autorizados:", USUARIOS_AUTORIZADOS);
+console.log("Grupos permitidos:", GRUPOS_PERMITIDOS);
+console.log("Usuários autorizados:", USUARIOS_AUTORIZADOS);
 
 // Lista de comandos para o comando "ajuda"
 const LISTA_DE_COMANDOS = `
