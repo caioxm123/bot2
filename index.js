@@ -3,6 +3,9 @@ const axios = require('axios');
 const express = require('express');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const WebSocket = require('ws');
+const AUTH_DIR = '/opt/render/.cache/auth_info';
+const fs = require('fs');
+const path = require('path');
 
 
 const app = express();
@@ -496,7 +499,25 @@ function pareceSerComandoFinanceiro(texto) {
 
 // Função principal do bot
 async function iniciarBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+  
+  const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+
+  // Garante que o diretório pai existe
+  const parentDir = path.dirname(AUTH_DIR);
+  if (!fs.existsSync(parentDir)) {
+    fs.mkdirSync(parentDir, { recursive: true, mode: 0o755 });
+  }
+
+  // Agora cria o diretório específico
+  if (!fs.existsSync(AUTH_DIR)) {
+    fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o755 });
+  }
+  
+  // Cria o diretório se não existir
+  if (!fs.existsSync(AUTH_DIR)) {
+    fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o755 }); // Permissões explícitas
+    console.log('Diretório criado:', AUTH_DIR);
+  }
   const sock = makeWASocket({
     auth: state,
     syncFullHistory: false,
