@@ -1,8 +1,11 @@
+const crypto = require('crypto');
+globalThis.crypto = crypto.webcrypto;
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const axios = require('axios');
 const express = require('express');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const WebSocket = require('ws');
+
 
 const app = express();
 app.use(express.json());
@@ -14,8 +17,10 @@ const GRUPOS_PERMITIDOS = [
 ]; // ID do grupo onde o bot está vinculado
 const USUARIOS_AUTORIZADOS = [
   '5521975874116@s.whatsapp.net', // N1
-  '55219976919619@s.whatsapp.net' // N2
+  '5521976919619@s.whatsapp.net' // N2
 ];
+console.log("Grupos permitidos:", GRUPOS_PERMITIDOS);
+console.log("Usuários autorizados:", USUARIOS_AUTORIZADOS);
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; // ✅ Usará variável de ambiente
 const chartJSNodeCanvas = new ChartJSNodeCanvas({
   width: 800,
@@ -496,7 +501,22 @@ function pareceSerComandoFinanceiro(texto) {
 // Função principal do bot
 async function iniciarBot() {
   const { state, saveCreds } = await useMultiFileAuthState('auth_info');
-  const sock = makeWASocket({ auth: state });
+  const sock = makeWASocket({
+    auth: state,
+    syncFullHistory: false,
+    shouldIgnoreJid: jid => {
+      // Permite grupos da lista PERMITIDOS
+      const isGrupoAutorizado = GRUPOS_PERMITIDOS.includes(jid);
+      
+      // Permite usuários autorizados em chats privados
+      const isUsuarioAutorizado = jid.endsWith('@s.whatsapp.net') && 
+                                USUARIOS_AUTORIZADOS.includes(jid);
+      
+      // Ignora apenas se NÃO for grupo autorizado E NÃO for usuário autorizado
+      return !(isGrupoAutorizado || isUsuarioAutorizado);
+    },
+    printQRInTerminal: true
+  });
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
@@ -513,6 +533,42 @@ async function iniciarBot() {
   sock.ev.on('messages.upsert', async ({ messages }) => {
     const msg = messages[0];
 
+    // Verificação básica
+  if (!msg?.message || !msg.key?.remoteJid || !msg.message.conversation) {
+    console.log("Mensagem inválida ignorada");
+    return;
+  }
+
+  const remetente = msg.key.participant || msg.key.remoteJid;
+
+  // Declaração única da variável 'texto'
+  const texto = msg.message.conversation.trim().toLowerCase();
+
+  // Log para depuração
+  console.log(`\n=== Nova mensagem ===`);
+  console.log(`De: ${msg.key.participant || msg.key.remoteJid}`);
+  console.log(`Texto: ${texto}`);
+  console.log(`Grupo: ${msg.key.remoteJid}`);
+
+  // Verificação 3 - Permissões
+  const isGrupoValido = GRUPOS_PERMITIDOS.includes(msg.key.remoteJid);
+  const isUsuarioValido = USUARIOS_AUTORIZADOS.includes(msg.key.participant);
+
+  if (!isGrupoValido && !isUsuarioValido) {
+    console.log("Mensagem bloqueada por permissões");
+    return;
+  }
+
+// Verificação única da mensagem
+  if (
+    !msg?.message || 
+    !msg.key?.remoteJid || 
+    typeof msg.message.conversation !== 'string'
+  ) {
+    console.log("Mensagem ignorada (formato inválido).");
+    return;
+  }
+    
     // Verificação completa da estrutura da mensagem
     if (
       !msg?.message || 
@@ -522,9 +578,6 @@ async function iniciarBot() {
       console.log("Mensagem ignorada (formato inválido).");
       return;
   }
-
-  // Declaração única da variável 'texto'
-  const texto = msg.message.conversation?.trim() || "";
 
   // Comando !id (funciona em qualquer grupo)
   if (texto.toLowerCase() === "!id") {
@@ -538,18 +591,20 @@ async function iniciarBot() {
   // --- Verificações de grupo e usuário ---
   console.log("Grupo Remetente:", msg.key.remoteJid);
   
-  // Verifica grupo permitido
-  if (!msg.key.remoteJid.endsWith('@g.us')) {
-  console.log("Mensagem ignorada (não é um grupo).");
-  return;
+  // Primeiro verifica se é um grupo permitido
+  if (GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
+    console.log("Mensagem de grupo autorizado:", msg.key.remoteJid);
+  } else {
+    console.log("Grupo não autorizado ou chat privado:", msg.key.remoteJid);
+    return; // Ignora mensagens de grupos não autorizados e chats privados
   }
 
-  // Verifica usuário autorizado
-  const remetenteId = msg.key.participant || msg.key.remoteJid;
-  if (!USUARIOS_AUTORIZADOS.includes(remetenteId)) {
-    console.log("Usuário não autorizado:", remetenteId);
-    return;
-  }
+  // Depois verifica usuário autorizado (mesmo em grupos)
+const remetenteId = msg.key.participant || msg.key.remoteJid;
+if (!USUARIOS_AUTORIZADOS.includes(remetenteId)) {
+  console.log("Usuário não autorizado:", remetenteId);
+  return;
+}
 
     // Ignora apenas mensagens que começam com "❌" (respostas automáticas do bot)
     if (msg.message.conversation?.startsWith("❌")) {
@@ -558,9 +613,9 @@ async function iniciarBot() {
     }
 
     // Verifica se a mensagem é do tipo 'conversation' (texto)
-   if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
-  console.log("Grupo não autorizado:", msg.key.remoteJid);
-  return;
+    if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
+      console.log("Grupo não autorizado:", msg.key.remoteJid);
+      return;
     }
 
     // Verifica se a mensagem é antiga (mais de 60 segundos)
