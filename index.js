@@ -499,8 +499,20 @@ function pareceSerComandoFinanceiro(texto) {
 
 // Função principal do bot
 async function iniciarBot() {
+
   
+  console.log("[1/4] Iniciando autenticação...");
   const { state, saveCreds } = await useMultiFileAuthState(AUTH_DIR);
+  
+  console.log("[2/4] Criando socket...");
+  let sock = makeWASocket({ auth: state, /*...*/ });
+
+  console.log("[3/4] Configurando listeners...");
+  sock.ev.on("connection.update", (update) => {
+    console.log("Status da conexão:", update.connection);
+  });
+
+  console.log("[4/4] Pronto para receber mensagens!");
 
   // Garante que o diretório pai existe
   const parentDir = path.dirname(AUTH_DIR);
@@ -518,7 +530,7 @@ async function iniciarBot() {
     fs.mkdirSync(AUTH_DIR, { recursive: true, mode: 0o755 }); // Permissões explícitas
     console.log('Diretório criado:', AUTH_DIR);
   }
-  const sock = makeWASocket({
+  sock = makeWASocket({
     auth: state,
     syncFullHistory: false,
     shouldIgnoreJid: jid => {
@@ -548,6 +560,7 @@ async function iniciarBot() {
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
+    console.log("[DEBUG] Nova mensagem recebida:", JSON.stringify(messages[0], null, 2));
     const msg = messages[0];
 
     // Verificação básica
@@ -994,5 +1007,6 @@ if (texto.toLowerCase() === "!id") {
 });
 }
 
-app.listen(3000, () => console.log("Servidor rodando!"));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log("Servidor rodando!"));
 iniciarBot();
