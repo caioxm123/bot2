@@ -1,3 +1,4 @@
+require('dotenv').config({ path: '/home/caio_eduardo_904/.env_botwpp' });
 const crypto = require('crypto');
 globalThis.crypto = crypto.webcrypto;
 const { default: makeWASocket, useMultiFileAuthState } = require('@whiskeysockets/baileys');
@@ -5,11 +6,11 @@ const axios = require('axios');
 const express = require('express');
 const { ChartJSNodeCanvas } = require('chartjs-node-canvas');
 const WebSocket = require('ws');
-
-
 const app = express();
 app.use(express.json());
 
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY;
+const CHAVE_API = process.env.CHAVE_API;
 const WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbypE6ax6JvWptpvcgYJ7I-ms4XAdOSckuF-3rPoVF-LImzJGxRwTXQmTG9ogIXSzZZHXw/exec';
 const GRUPOS_PERMITIDOS = [
   '120363403512588677@g.us', // Grupo original
@@ -19,7 +20,6 @@ const USUARIOS_AUTORIZADOS = [
   '5521975874116@s.whatsapp.net', // N1
   '5521976919619@s.whatsapp.net' // N2
 ];
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY; // ✅ Usará variável de ambiente
 const chartJSNodeCanvas = new ChartJSNodeCanvas({
   width: 800,
   height: 600,
@@ -34,6 +34,25 @@ let ultimoComandoProcessado = null;
 console.log("Grupos permitidos:", GRUPOS_PERMITIDOS);
 console.log("Usuários autorizados:", USUARIOS_AUTORIZADOS);
 
+// Endpoint para enviar mensagens
+app.post('/api/send-message', async (req, res) => {
+  if (req.body.apiKey !== CHAVE_API) {
+    return res.status(403).json({ error: 'Acesso negado!' });
+  }
+
+  try {
+    if (!sock || sock.connection === 'close') {
+      await iniciarConexaoWhatsApp(); // Reconecta se necessário
+    }
+
+    const jid = `${req.body.number}@s.whatsapp.net`;
+    await sock.sendMessage(jid, { text: req.body.message });
+    
+    res.json({ success: true });
+  } catch (error) {
+    res.status(500).json({ error: 'Erro ao enviar mensagem: ' + error.message });
+  }
+});
 // Lista de comandos para o comando "ajuda"
 const LISTA_DE_COMANDOS = `
 📋 *Lista de Comandos* 📋
@@ -88,7 +107,7 @@ async function interpretarMensagemComOpenRouter(texto) {
     const resposta = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'qwen/qwq-32b:free',
+        model: 'deepseek/deepseek-chat-v3-0324:free',
         messages: [
           {
             role: 'user',
@@ -130,7 +149,7 @@ async function interpretarMensagemComOpenRouter(texto) {
             **Instruções Especiais para Pedidos:**
             - Se a mensagem incluir palavras como 'consultar pedidos', 'ver pedidos' ou 'listar pedidos', extraia:
             - cliente: Nome do cliente após 'para' ou 'do'.
-            **Instruções Especiais para Datas:**\n" +
+            **Instruções Especiais para Datas:**
             - A data deve ser extraída **exatamente como escrita pelo usuário**, sem modificações.\n" +
             - Exemplo:
             - Mensagem: 'Lista de pedidos da Lavradio dia 21/03/2025'
@@ -203,17 +222,29 @@ async function interpretarMensagemComOpenRouter(texto) {
 
             **Retorne apenas o JSON, sem explicações adicionais.**
 
-            Mensagem: "${texto}"`
+            Mensagem: ${JSON.stringify(texto)}`
           }
         ],
       },
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`
-        }
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY.trim()}`,
+          'HTTP-Referer': 'http://localhost',
+          'X-Title': 'Bot Financeiro'
+        },
+        timeout: 10000 // 10 segundos de timeout
       }
     );
+
+    if (resposta.status === 401) {
+      throw new Error("Erro de autenticação: Chave de API inválida ou expirada");
+    }
+
+    // Verificação de status adicionada
+    if (resposta.status !== 200) {
+      throw new Error(`Erro na API: ${resposta.status} - ${resposta.statusText}`);
+    }
 
     console.log("Resposta da API OpenRouter recebida:", JSON.stringify(resposta.data, null, 2));
 
@@ -236,7 +267,16 @@ async function interpretarMensagemComOpenRouter(texto) {
       return interpretarMensagemManual(texto); // Fallback manual
     }
   } catch (erro) {
-    console.error("Erro ao interpretar mensagem com OpenRouter:", erro);
+    console.error("Erro detalhado na API OpenRouter:", {
+      message: erro.message,
+      response: erro.response?.data,
+      status: erro.response?.status
+    });
+    
+    if (erro.response?.status === 401) {
+      throw new Error("❌ Erro de autenticação com a API OpenRouter. Verifique sua chave de API.");
+    }
+    
     return null;
   }
 }
@@ -248,31 +288,42 @@ async function gerarRespostaConversacao(texto) {
     const resposta = await axios.post(
       'https://openrouter.ai/api/v1/chat/completions',
       {
-        model: 'qwen/qwq-32b:free',
+        model: 'deepseek/deepseek-chat-v3-0324:free',
         messages: [
           {
             role: 'user',
             content: `Você é um assistente virtual que ajuda com finanças e também pode conversar sobre outros assuntos. Responda de forma amigável e útil.
-            Mensagem: "${texto}"`
+            Mensagem: ${JSON.stringify(texto)}`
           }
         ],
       },
       {
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${OPENROUTER_API_KEY}`
+          'Authorization': `Bearer ${process.env.OPENROUTER_API_KEY.trim()}`, // <-- Vírgula adicionada
+          'HTTP-Referer': 'http://localhost', // Usar localhost
+          'X-Title': 'Bot Financeiro'
         }
       }
     );
 
+// Verificação de status adicionada
+    if (resposta.status !== 200) {
+      throw new Error(`Erro na API: ${resposta.status} - ${resposta.statusText}`);
+    }
+    
     console.log("Resposta da API OpenRouter recebida:", JSON.stringify(resposta.data, null, 2));
 
     // Acessa o conteúdo da mensagem
     const mensagem = resposta.data.choices[0].message.content;
     return mensagem;
   } catch (erro) {
-    console.error("Erro ao gerar resposta de conversação:", erro);
-    return "❌ Desculpe, não consegui processar sua mensagem. Tente novamente mais tarde.";
+    console.error("Erro detalhado na geração de resposta:", {
+      message: erro.message,
+      stack: erro.stack,
+      response: erro.response?.data
+    });
+    return "❌ Erro interno. Tente novamente mais tarde.";
   }
 }
 
@@ -497,53 +548,51 @@ function pareceSerComandoFinanceiro(texto) {
 }
 
 // Função principal do bot
-async function iniciarBot() {
-  const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+let sock = null;
+
+async function iniciarConexaoWhatsApp() {
+const { state, saveCreds } = await useMultiFileAuthState('auth_info');
+  
   const sock = makeWASocket({
     auth: state,
+    printQRInTerminal: true,
     syncFullHistory: false,
+    connectTimeoutMs: 120_000,
+    keepAliveIntervalMs: 25_000,
+    browser: ['Bot Financeiro', 'Chrome', '115.0.0.0'],
     shouldIgnoreJid: jid => {
-      // Permite grupos da lista PERMITIDOS
       const isGrupoAutorizado = GRUPOS_PERMITIDOS.includes(jid);
-      
-      // Permite usuários autorizados em chats privados
-      const isUsuarioAutorizado = jid.endsWith('@s.whatsapp.net') && 
-                                USUARIOS_AUTORIZADOS.includes(jid);
-      
-      // Ignora apenas se NÃO for grupo autorizado E NÃO for usuário autorizado
+      const isUsuarioAutorizado = USUARIOS_AUTORIZADOS.includes(jid);
       return !(isGrupoAutorizado || isUsuarioAutorizado);
-    },
-    printQRInTerminal: true
+    }
   });
+
   sock.ev.on('creds.update', saveCreds);
 
   sock.ev.on('connection.update', (update) => {
     const { connection, qr } = update;
+    
     if (qr) {
       const qrLink = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qr)}`;
       console.log('QR Code:', qrLink);
       wss.clients.forEach(client => client.send(JSON.stringify({ qr: qrLink })));
     }
+    
     if (connection === 'open') console.log('Bot conectado!');
-    if (connection === 'close') setTimeout(iniciarBot, 5000);
+    if (connection === 'close') setTimeout(iniciarConexaoWhatsApp, 5000);
   });
 
   sock.ev.on('messages.upsert', async ({ messages }) => {
-    const msg = messages[0];
-
-    // Verificação básica
-  if (!msg?.message || !msg.key?.remoteJid || !msg.message.conversation) {
-    console.log("Mensagem inválida ignorada");
-    return;
-  }
+    try {
+      const msg = messages[0];
+      if (!msg?.message || !msg.key?.remoteJid) return;
+    
 
   const remetente = msg.key.participant || msg.key.remoteJid;
-
-  // Declaração única da variável 'texto'
   const texto = msg.message.conversation.trim().toLowerCase();
 
   // Log para depuração
-  console.log(`\n=== Nova mensagem ===`);
+  console.log(`=== Nova mensagem ===`);
   console.log(`De: ${msg.key.participant || msg.key.remoteJid}`);
   console.log(`Texto: ${texto}`);
   console.log(`Grupo: ${msg.key.remoteJid}`);
@@ -593,7 +642,7 @@ async function iniciarBot() {
   if (GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
     console.log("Mensagem de grupo autorizado:", msg.key.remoteJid);
   } else {
-    console.log("Grupo não autorizado ou chat privado:", msg.key.remoteJid);
+    console .log("Grupo não autorizado ou chat privado:", msg.key.remoteJid);
     return; // Ignora mensagens de grupos não autorizados e chats privados
   }
 
@@ -611,10 +660,7 @@ if (!USUARIOS_AUTORIZADOS.includes(remetenteId)) {
     }
 
     // Verifica se a mensagem é do tipo 'conversation' (texto)
-    if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) {
-      console.log("Grupo não autorizado:", msg.key.remoteJid);
-      return;
-    }
+    if (!GRUPOS_PERMITIDOS.includes(msg.key.remoteJid)) return;
 
     // Verifica se a mensagem é antiga (mais de 60 segundos)
     const mensagemTimestamp = msg.messageTimestamp;
@@ -640,6 +686,8 @@ if (texto.toLowerCase() === "!id") {
   ultimoComandoProcessado = texto;
 
   console.log("Texto da mensagem:", texto);
+
+  
 
     // --- VERIFICAÇÃO DO COMANDO "AJUDA" ---
   if (texto.toLowerCase() === "ajuda") {
@@ -677,61 +725,56 @@ if (texto.toLowerCase() === "!id") {
         }
 
         case 'consultar pedidos': {
-          console.log("Processando comando 'consultar pedidos'...");
-          const cliente = parametros.cliente;
-          let dataFormatada = parametros.data;
-        
-          // Validação e formatação da data
-          if (dataFormatada && dataFormatada.match(/^\d{2}\/\d{2}$/)) {
-            dataFormatada += `/${new Date().getFullYear()}`; // Adiciona ano se faltar
-          }
-        
-          try {
-            // Faz a requisição com a data formatada
-            const response = await axios.get(
-              `${WEB_APP_URL}?action=consultarPedidos&cliente=${encodeURIComponent(cliente)}&data=${encodeURIComponent(dataFormatada)}`
-            );
-            
-            const pedidos = response.data;
-        
-            if (!pedidos || pedidos.length === 0) {
-              await sock.sendMessage(msg.key.remoteJid, { 
-                text: `📭 Nenhum pedido encontrado para *${cliente}* em *${dataFormatada}*.` 
-              });
-              return;
-            }
-        
-            // Construção da mensagem
-            let mensagem = `📅 Pedidos para *${cliente}* em *${dataFormatada}*:\n\n`;
-            let totalPedido = 0;
-        
-            pedidos.forEach((pedido) => {
-              mensagem += `----------------------------------------\n`;
-              mensagem += `🍅 *Produto*: ${pedido.produto}\n`;
-              mensagem += `💵 *Preço Unitário*: R$ ${pedido.precoUnitario}\n`;
-              mensagem += `📦 *Quantidade*: ${pedido.quantidade}\n`;
-              
-              // Garante que o total seja tratado como string
-              const totalProduto = typeof pedido.total === 'number' 
-                ? pedido.total.toFixed(2).replace(".", ",") 
-                : pedido.total.toString().replace(".", ",");
-              
-              mensagem += `💰 *Total do Produto*: R$ ${totalProduto}\n`;
-              totalPedido += parseFloat(pedido.total.toString().replace(",", "."));
-            });
-        
-            mensagem += `\n💼 *Valor Total do Pedido*: R$ ${totalPedido.toFixed(2).replace(".", ",")}`;
-        
-            await sock.sendMessage(msg.key.remoteJid, { text: mensagem });
-          } catch (error) {
-            console.error("Erro ao consultar pedidos:", error);
-            await sock.sendMessage(msg.key.remoteJid, { 
-              text: "❌ Erro ao buscar pedidos. Verifique o formato da data (DD/MM/AAAA)." 
-            });
-          }
-          break;
+        console.log("Processando comando 'consultar pedidos'...");
+        const cliente = parametros.cliente;
+        let dataFormatada = parametros.data;
+      
+        if (dataFormatada && dataFormatada.match(/^\d{2}\/\d{2}$/)) {
+          dataFormatada += `/${new Date().getFullYear()}`;
         }
-        
+      
+        try {
+          const response = await axios.get(
+            `${WEB_APP_URL}?action=consultarPedidos&cliente=${encodeURIComponent(cliente)}&data=${encodeURIComponent(dataFormatada)}`
+          );
+          
+          const pedidos = response.data;
+      
+          if (!pedidos || pedidos.length === 0) {
+            await sock.sendMessage(msg.key.remoteJid, { 
+              text: `📭 Nenhum pedido encontrado para *${cliente}* em *${dataFormatada}*.` 
+            });
+            return;
+          }
+      
+          let mensagem = `📅 Pedidos para *${cliente}* em *${dataFormatada}*:\n\n`;
+          let totalPedido = 0;
+      
+          pedidos.forEach((pedido) => {
+            mensagem += `----------------------------------------\n`;
+            mensagem += `🍅 *Produto*: ${pedido.produto}\n`;
+            mensagem += `💵 *Preço Unitário*: R$ ${pedido.precoUnitario}\n`;
+            mensagem += `📦 *Quantidade*: ${pedido.quantidade}\n`;
+            
+            const totalProduto = typeof pedido.total === 'number' 
+              ? pedido.total.toFixed(2).replace(".", ",") 
+              : pedido.total.toString().replace(".", ",");
+            
+            mensagem += `💰 *Total do Produto*: R$ ${totalProduto}\n`;
+            totalPedido += parseFloat(pedido.total.toString().replace(",", "."));
+          });
+      
+          mensagem += `💼 *Valor Total do Pedido*: R$ ${totalPedido.toFixed(2).replace(".", ",")}`;
+      
+          await sock.sendMessage(msg.key.remoteJid, { text: mensagem });
+        } catch (error) {
+          console.error("Erro ao consultar pedidos:", error);
+          await sock.sendMessage(msg.key.remoteJid, { 
+            text: "❌ Erro ao buscar pedidos. Verifique o formato da data (DD/MM/AAAA)." 
+          });
+        }
+        break; // Fechamento correto do case
+      }    
         case 'adicionar pedido': {
           console.log("Processando comando 'adicionar pedido'...");
           const cliente = parametros.cliente;
@@ -958,27 +1001,27 @@ if (texto.toLowerCase() === "!id") {
           break;
 
           default:
-            console.log("Comando não reconhecido.");
-            await sock.sendMessage(msg.key.remoteJid, { text: "❌ Comando não reconhecido. Use 'ajuda' para ver a lista de comandos." });
+                await sock.sendMessage(msg.key.remoteJid, { 
+                  text: "❌ Comando não reconhecido. Use 'ajuda'." 
+                });
+            }
+          }
+        } else {
+          const respostaConversacao = await gerarRespostaConversacao(texto);
+          await sock.sendMessage(msg.key.remoteJid, { text: respostaConversacao });
         }
-      } else {
-        // Se o OpenRouter retornou JSON vazio ou inválido, entra na conversação
-        console.log("Gerando resposta de conversação...");
-        const respostaConversacao = await gerarRespostaConversacao(texto);
-        await sock.sendMessage(msg.key.remoteJid, { text: respostaConversacao });
+      } catch (error) {
+        console.error("Erro no processamento:", error);
+        await sock.sendMessage(msg.key.remoteJid, { 
+          text: "❌ Ocorreu um erro interno. Tente novamente." 
+        });
       }
-    } else {
-      // Se a mensagem não parece ser um comando, entra na conversação
-      console.log("Gerando resposta de conversação...");
-      const respostaConversacao = await gerarRespostaConversacao(texto);
-      await sock.sendMessage(msg.key.remoteJid, { text: respostaConversacao });
+    } catch (error) {
+      console.error("Erro crítico:", error);
     }
-  } catch (error) {
-    console.error("Erro ao processar a mensagem:", error);
-    await sock.sendMessage(msg.key.remoteJid, { text: `❌ Erro: ${error.message}` });
-  }
-});
+  });
 }
 
-app.listen(3000, () => console.log("Servidor rodando!"));
-iniciarBot();
+iniciarConexaoWhatsApp().then(() => {
+  app.listen(3000, () => console.log("Servidor rodando!"));
+});
